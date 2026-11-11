@@ -1,42 +1,48 @@
-# WorkBuddy Model Bridge for macOS
+# WorkBuddy Model Bridge（macOS）
 
-A standalone native SwiftUI macOS app that connects locally signed-in WorkBuddy subscription models to Claude Code and Claude Desktop through CC Switch.
+一个原生 SwiftUI macOS 应用，通过 CC Switch 把本机已登录的 WorkBuddy 订阅模型接入 Claude Code 与 Claude Desktop。English: [README.en.md](README.en.md).
 
-## Attribution and porting logic
+## 原作者与移植说明
 
-The original DSH plugin was created by **LaoDing (老丁, GitHub [`dingminhua`](https://github.com/dingminhua))** and is licensed under the project [MIT License](LICENSE). Thank you to the original author for open-sourcing the WorkBuddy integration. This project is an independent macOS adaptation in its own repository. The DSH plugin repository remains separate.
+原始 DSH 插件由 **LaoDing（老丁，GitHub [`dingminhua`](https://github.com/dingminhua)）** 创建，遵循本项目的 [MIT 许可证](LICENSE)。感谢原作者开源 WorkBuddy 接入实现。本项目是单独维护的 macOS 移植；DSH 插件仓库仍独立存在。
 
-The adapter reuses the repository's credential discovery and refresh, regional model catalogs, upstream client, and secured loopback shim. A separate `src/mac-gateway.ts` entry starts one local endpoint per region without importing DSH host modules or invoking WorkBuddy CLI. The SwiftUI app launches the bundled Node runtime and gateway, stores its random local API key in macOS Keychain, and keeps WorkBuddy credentials under the user's Application Support directory. CC Switch performs the Claude Messages to OpenAI Chat Completions conversion. The gateway supplies model inference from the WorkBuddy subscription; **Claude's harness remains responsible for task execution, tool use, and local file operations**.
+本项目复用原仓库中的凭据发现与刷新、区域模型目录、上游客户端和本地安全 shim。新增的 `src/mac-gateway.ts` 是独立网关入口：按国内、国际区域分别启动本地服务，不依赖 DSH 宿主，也不调用 WorkBuddy CLI。SwiftUI 应用启动随包提供的 Node 运行时和网关，将本地随机 API key 存入 macOS 钥匙串，并把 WorkBuddy 凭据保存在用户的 Application Support 目录。
 
-The app icon is an edited derivative of the WorkBuddy app icon. WorkBuddy and related marks remain the property of their respective owners; this project is unaffiliated with or endorsed by WorkBuddy or Tencent.
+请求链路为：**Claude harness → CC Switch → 本地 WorkBuddy 网关 → WorkBuddy 订阅模型**。CC Switch 将 Claude Messages 请求转换为 OpenAI Chat Completions 格式；WorkBuddy 订阅提供模型推理，Claude harness 负责任务执行、工具调用和本地文件操作。
 
-## Build
+图标基于 WorkBuddy 应用图标修改。WorkBuddy 与相关商标归各自权利人所有；本项目与 WorkBuddy/Tencent 无隶属或背书关系。
 
-Requirements: macOS 14 or newer, Xcode 27.2 or newer, Node.js 22 or newer, and pnpm.
+## 构建 macOS 应用
+
+需要 macOS 14 或更新版本、Xcode 27.2 或更新版本、Node.js 22 或更新版本及 pnpm。
 
 ```sh
 pnpm install
 bash macos/build-app.sh
 ```
 
-The resulting app is `macos/build/WorkBuddy Model Bridge.app`. The app bundle includes the Node runtime found on the build machine and the compiled gateway. Open the Swift package at `macos/WorkBuddyModelBridge` in Xcode for native SwiftUI development.
+构建结果为 `macos/build/WorkBuddy Model Bridge.app`，并生成可安装压缩包 `macos/build/WorkBuddy Model Bridge.zip`。压缩包中的 `.app` 可解压后拖入“应用程序”。应用包会携带构建机器上的 Node 运行时与已编译网关。SwiftUI 源码位于 `macos/WorkBuddyModelBridge`，可用 Xcode 打开。
 
-The build also creates `macos/build/WorkBuddy Model Bridge.zip`, preserving the `.app` bundle for installation. Unzip it and drag the app to **Applications**. The app starts the local gateway when its main window opens. Closing the window leaves the app and gateway running; use the menu bar **sparkles** menu to reopen the window, stop or start the gateway, or quit the app. Quitting the app stops the gateway.
+应用打开主窗口时启动本地网关。关闭窗口后应用和网关继续运行；可通过菜单栏的 sparkles 菜单重新打开窗口、停止或启动网关，或退出应用。退出应用会停止网关。
 
-## Connect CC Switch
+## 接入 CC Switch
 
-1. Open **WorkBuddy Model Bridge**. It reads the local WorkBuddy desktop sign-in and publishes separate domestic and international endpoints.
-2. In CC Switch, add a Claude provider for each region you use.
-3. Set the provider's upstream API format to **OpenAI Chat Completions**.
-4. Use the corresponding Base URL and API Key shown on the app's Overview page.
-5. Enable CC Switch local routing for Claude Code. For Claude Desktop, select its model mapping mode and keep the app and CC Switch routing service running.
+1. 打开 **WorkBuddy Model Bridge**。应用会读取 WorkBuddy 桌面端登录状态，并分别显示国内版与国际版端点。
+2. 在 CC Switch 中按使用区域添加 Claude provider。
+3. 将上游 API 格式设为 **OpenAI Chat Completions**。
+4. 填入应用“概览”页对应区域的 Base URL 和 API Key。
+5. Claude Code 使用 CC Switch 本地路由。Claude Desktop 按 CC Switch 中对应的模型映射方式配置，并保持应用及 CC Switch 路由服务运行。
 
-The gateway listens on loopback ports `15971` (domestic) and `15972` (international). It binds only to `127.0.0.1`; each request requires a random API key stored in the macOS Keychain. WorkBuddy account tokens stay in the app's Application Support directory and are never passed to Claude or CC Switch.
+网关只监听回环地址 `127.0.0.1`：国内版端口为 `15971`，国际版端口为 `15972`。每个请求都要通过随机 API key 验证，该 key 保存在 macOS 钥匙串。WorkBuddy 账户 token 留在应用的 Application Support 目录，不会传给 Claude 或 CC Switch。
 
-## Current scope
+## 当前范围
 
-- The app runs independently of DeepSeek Harness and does not invoke WorkBuddy CLI.
-- The app discovers WorkBuddy's local desktop credentials, refreshes tokens through the existing store, reads model catalogs, and starts one secured endpoint per region.
-- Account selection, account-pool failover, credits, check-in, image/video tools, and catalog editing are not in this first macOS app slice.
-- Claude's harness owns tool execution and local task work; WorkBuddy supplies model inference through its subscription.
-- Claude Desktop's third-party model mapping and Claude Code gateway configuration depend on the installed CC Switch and Claude versions. Anthropic does not support routing Claude Code to non-Claude models.
+- 应用独立于 DeepSeek Harness，不调用 WorkBuddy CLI。
+- 应用发现 WorkBuddy 桌面凭据、刷新 token、读取模型目录，并按区域启动受保护的本地端点。
+- 首个 macOS 版本暂不包含账户选择、账号池故障转移、积分、签到、图像/视频工具和模型目录编辑。
+- Claude harness 执行工具与本地任务；WorkBuddy 订阅仅提供模型推理。
+- Claude Desktop 的第三方模型映射和 Claude Code 网关配置取决于已安装的 CC Switch 与 Claude 版本。Anthropic 不支持将 Claude Code 路由到非 Claude 模型。
+
+## 第三方声明
+
+详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
