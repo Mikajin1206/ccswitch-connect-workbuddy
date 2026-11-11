@@ -1,0 +1,30 @@
+{
+  "name": "ccswitch-connect-workbuddy",
+  "displayName": "WorkBuddy Model Bridge",
+  "version": "1.0.0",
+  "description": "Native macOS bridge exposing WorkBuddy subscription models to Claude Code and Claude Desktop through CC Switch.",
+  "author": "Mikajin1206",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "build": "tsdown src/mac-gateway.ts --format esm --platform node --target es2024 --out-dir lib --no-dts --clean && mv lib/mac-gateway.mjs lib/macGateway.js",
+    "typecheck": "tsc -p tsconfig.json",
+    "check:pii": "node scripts/check-pii.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "tsdown": "0.22.14",
+    "typescript": "5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Mikajin1206/ccswitch-connect-workbuddy.git"
+  },
+  "homepage": "https://github.com/Mikajin1206/ccswitch-connect-workbuddy",
+  "bugs": {
+    "url": "https://github.com/Mikajin1206/ccswitch-connect-workbuddy/issues"
+  }
+}

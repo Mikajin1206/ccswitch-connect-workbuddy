@@ -1,0 +1,13 @@
+node_modules/
+.pnpm-store/
+lib/
+/.build/
+macos/build/
+macos/WorkBuddyModelBridge/.build/
+macos/WorkBuddyModelBridge/.swiftpm/
+coverage/
+*.log
+.env
+.DS_Store
+.dsh-vision-router/
+.dsh-npm-cache/
