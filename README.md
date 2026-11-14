@@ -25,6 +25,17 @@ bash macos/build-app.sh
 
 应用打开主窗口时启动本地网关。关闭窗口后应用和网关继续运行；可通过菜单栏的 sparkles 菜单重新打开窗口、停止或启动网关，或退出应用。退出应用会停止网关。
 
+## Windows 与 Linux 上的构建
+
+Node 侧构建在 Windows、macOS、Linux 上都能运行：
+
+```sh
+npm install
+npm run build
+```
+
+产物为 `lib/macGateway.js`。SwiftUI 应用外壳只能在 macOS 上构建，因为需要 Xcode；`macos/build-app.sh` 会先执行上述 `npm run build`，再编译并打包应用。
+
 ## 接入 CC Switch
 
 1. 打开 **WorkBuddy Model Bridge**。应用会读取 WorkBuddy 桌面端登录状态，并分别显示国内版与国际版端点。
