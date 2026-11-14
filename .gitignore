@@ -3,6 +3,7 @@ node_modules/
 lib/
 /.build/
 macos/build/
+windows/build/
 macos/WorkBuddyModelBridge/.build/
 macos/WorkBuddyModelBridge/.swiftpm/
 coverage/

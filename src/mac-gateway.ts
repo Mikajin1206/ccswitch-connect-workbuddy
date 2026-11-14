@@ -8,6 +8,8 @@
  */
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
+import { homedir } from 'node:os'
+import { createInterface } from 'node:readline'
 import { defaultDesktopAuthDirs, WorkBuddyCredentialStore } from './auth.ts'
 import { WorkBuddyCatalog } from './catalog.ts'
 import { createWorkBuddyShim } from './shim.ts'
@@ -15,7 +17,9 @@ import { WorkBuddyUpstreamClient, type WorkBuddyRegion } from './upstream.ts'
 
 const regions: readonly WorkBuddyRegion[] = ['cn', 'global']
 const appSupport = process.env['WORKBUDDY_GATEWAY_HOME']
-  ?? join(process.env['HOME'] ?? '', 'Library', 'Application Support', 'WorkBuddy Model Bridge')
+  ?? (process.platform === 'win32'
+    ? join(process.env['LOCALAPPDATA'] ?? join(homedir(), 'AppData', 'Local'), 'WorkBuddy Model Bridge')
+    : join(homedir(), 'Library', 'Application Support', 'WorkBuddy Model Bridge'))
 const apiKey = process.env['WORKBUDDY_GATEWAY_API_KEY']?.trim() ?? ''
 
 if (apiKey.length < 32) {
@@ -26,6 +30,22 @@ await mkdir(appSupport, { recursive: true, mode: 0o700 })
 
 const client = new WorkBuddyUpstreamClient(message => console.error(`[gateway] ${message}`))
 const running: Array<Awaited<ReturnType<typeof createWorkBuddyShim>>> = []
+let stopping = false
+const stop = async (): Promise<void> => {
+  if (stopping) return
+  stopping = true
+  await Promise.all(running.map(shim => shim.close()))
+  process.exit(0)
+}
+process.once('SIGINT', () => void stop())
+process.once('SIGTERM', () => void stop())
+// Windows has no POSIX SIGTERM. The desktop shell owns this private stdin pipe;
+// closing the shell also closes the pipe and prevents an orphan gateway.
+if (process.env['WORKBUDDY_GATEWAY_MANAGED'] === '1') {
+  const commands = createInterface({ input: process.stdin })
+  commands.on('line', line => { if (line === 'stop') void stop() })
+  commands.once('close', () => void stop())
+}
 const endpointRows: Array<{
   region: WorkBuddyRegion
   baseUrl: string
@@ -91,13 +111,3 @@ for (const region of regions) {
 // The app consumes this single line from the child process pipe; credentials
 // and local endpoint details are never written to a log or a status file.
 process.stdout.write(`${JSON.stringify({ kind: 'ready', endpoints: endpointRows })}\n`)
-
-let stopping = false
-const stop = async (): Promise<void> => {
-  if (stopping) return
-  stopping = true
-  await Promise.all(running.map(shim => shim.close()))
-  process.exit(0)
-}
-process.once('SIGINT', () => void stop())
-process.once('SIGTERM', () => void stop())

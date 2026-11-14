@@ -1,4 +1,4 @@
-# WorkBuddy Model Bridge for macOS
+# WorkBuddy Model Bridge for macOS and Windows
 
 A standalone native SwiftUI macOS app that connects locally signed-in WorkBuddy subscription models to Claude Code and Claude Desktop through CC Switch.
 
@@ -40,3 +40,8 @@ The gateway listens on loopback ports `15971` (domestic) and `15972` (internatio
 - Account selection, account-pool failover, credits, check-in, image/video tools, and catalog editing are not in this first macOS app slice.
 - Claude's harness owns tool execution and local task work; WorkBuddy supplies model inference through its subscription.
 - Claude Desktop's third-party model mapping and Claude Code gateway configuration depend on the installed CC Switch and Claude versions. Anthropic does not support routing Claude Code to non-Claude models.
+## Windows app
+
+On Windows 10/11 with .NET Framework 4.8 and Node.js ^22.19.0 or >=24, run `npm install`, `npm run typecheck`, then `./windows/build-app.ps1` from PowerShell. See [the Windows build instructions](README.md#构建-windows-应用). Follow your organization's script approval process if execution policy blocks scripts; the build does not change system policy.
+
+The script compiles a native WinForms EXE and packages it with Node, the shared gateway and licenses in a timestamped `windows/build/` directory and portable ZIP. Extract the whole ZIP before launching the EXE. Closing the window keeps the app in the tray; Quit closes its owned gateway through a private stdin pipe. Both regional endpoints, sign-in state and models are shown, with buttons to copy URLs and API keys. Keys are encrypted using DPAPI CurrentUser in `%LOCALAPPDATA%/WorkBuddy Model Bridge`. The existing credential layer's Windows ACL hardening runs during real gateway use; restricted environments need approval for that runtime behavior. No installer, signing or automatic updates are included. Real-account inference has not been verified; [verification details](windows/VERIFICATION.md).
