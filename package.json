@@ -10,7 +10,7 @@
     "node": "^22.19.0 || >=24.0.0"
   },
   "scripts": {
-    "build": "tsdown src/mac-gateway.ts --format esm --platform node --target es2024 --out-dir lib --no-dts --clean && mv lib/mac-gateway.mjs lib/macGateway.js",
+    "build": "tsdown src/mac-gateway.ts --format esm --platform node --target es2024 --out-dir lib --no-dts --clean && node scripts/rename-gateway-output.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "check:pii": "node scripts/check-pii.mjs"
   },
