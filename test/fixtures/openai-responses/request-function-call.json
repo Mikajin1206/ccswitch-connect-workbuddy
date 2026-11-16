@@ -1,0 +1,18 @@
+{
+  "model": "gpt-5-codex",
+  "stream": false,
+  "instructions": "你是编码助手。",
+  "input": [
+    { "type": "message", "role": "user", "content": [{ "type": "input_text", "text": "列出目录" }] },
+    { "type": "function_call", "call_id": "call_9", "name": "list_dir", "arguments": "{\"path\":\".\"}" },
+    { "type": "function_call_output", "call_id": "call_9", "output": "src\nlib" },
+    { "type": "reasoning", "summary": [] },
+    { "type": "message", "role": "user", "content": "继续" }
+  ],
+  "tools": [
+    { "type": "function", "name": "list_dir", "description": "列出目录内容", "parameters": { "type": "object", "properties": { "path": { "type": "string" } } } }
+  ],
+  "tool_choice": "auto",
+  "reasoning": { "effort": "high" },
+  "max_output_tokens": 512
+}

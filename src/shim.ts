@@ -27,6 +27,8 @@ import type { WorkBuddyCatalog } from './catalog.ts'
 import type { WorkBuddyRefusalReport } from './off-thinking.ts'
 import { usageOfChunk } from './body-report.ts'
 import { hostIsLoopback, originIsLoopback } from './loopback.ts'
+import type { BridgeSettings } from './bridge-config.ts'
+import { createBridgeRouteHandlers } from './protocol/bridge-routes.ts'
 import { DsmlStreamBuffer } from './dsml-recovery.ts'
 import type { RecoveredToolCall, RecoveryGate } from './dsml-recovery.ts'
 import { parseQueueAnswer, queueNoticeText } from './queue.ts'
@@ -122,6 +124,22 @@ export interface WorkBuddyShimOptions {
   allowMissingOrigin?: boolean
   /** Optional stable loopback port for standalone desktop clients. */
   port?: number
+  /**
+   * The WorkBuddy region this listener serves. Reported on the bridge status
+   * endpoint; model mappings and the catalog are per region. Defaults to
+   * `cn` when absent (the historical single-region behaviour).
+   */
+  region?: 'cn' | 'global'
+  /**
+   * Direct-connection protocol entries (需求 §6.2).
+   *
+   * When set, the shim ALSO serves `POST /v1/messages` (Anthropic Messages,
+   * for Claude Code / Claude Desktop) and `POST /v1/responses` (OpenAI
+   * Responses, for Codex) by reusing its OWN chat pipeline over loopback, plus
+   * `GET /bridge/status` for protocol/model-mapping diagnostics. Absent keeps
+   * the historical OpenAI-chat-only surface byte-for-byte unchanged.
+   */
+  bridge?: { settings: BridgeSettings }
   /**
    * When to perturb scanned messages with invisible characters.
    *
@@ -1517,6 +1535,24 @@ export function createWorkBuddyShim(options: WorkBuddyShimOptions): WorkBuddyShi
   const SHARED_SECRET = configuredSecret || randomBytes(32).toString('base64url')
 
   /**
+   * The direct-connection handlers, or `undefined` when the host did not opt
+   * in. Built here so they share THIS shim's body cap, catalog, secret and
+   * port — the loopback reuse contract that keeps upstream logic in one place.
+   */
+  const bridgeRoutes = options.bridge === undefined
+    ? undefined
+    : createBridgeRouteHandlers({
+      region: options.region ?? 'cn',
+      catalog,
+      settings: options.bridge.settings,
+      ...(logger === undefined ? {} : { logger }),
+      readRequestBody: readBody,
+      isBodyTooLarge: (error: unknown): boolean => error instanceof RequestBodyTooLargeError,
+      chatEndpoint: () => `${baseUrl()}/v1/chat/completions`,
+      secret: SHARED_SECRET,
+    })
+
+  /**
    * Whether this process's prompts have been PROVEN to need the invisible
    * perturbation before the gateway will accept them.
    *
@@ -1642,6 +1678,20 @@ export function createWorkBuddyShim(options: WorkBuddyShimOptions): WorkBuddyShi
       if (req.method === 'POST' && (url === '/v1/chat/completions' || url === '/v1/chat/completions/')) {
         await chatCompletions(req, res)
         return
+      }
+      if (bridgeRoutes !== undefined) {
+        if (req.method === 'POST' && (url === '/v1/messages' || url === '/v1/messages/')) {
+          await bridgeRoutes.anthropicMessages(req, res)
+          return
+        }
+        if (req.method === 'POST' && (url === '/v1/responses' || url === '/v1/responses/')) {
+          await bridgeRoutes.openaiResponses(req, res)
+          return
+        }
+        if (req.method === 'GET' && (url === '/bridge/status' || url === '/bridge/status/')) {
+          writeJson(res, 200, bridgeRoutes.status())
+          return
+        }
       }
       writeOpenAIError(res, 404, 'not_found', `no such route: ${req.method} ${url}`)
     } catch (error: unknown) {

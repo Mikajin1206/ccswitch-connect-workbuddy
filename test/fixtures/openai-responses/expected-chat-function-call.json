@@ -1,0 +1,30 @@
+{
+  "model": "wb-code-cn",
+  "stream": false,
+  "messages": [
+    { "role": "system", "content": "你是编码助手。" },
+    { "role": "user", "content": [{ "type": "text", "text": "列出目录" }] },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        { "id": "call_9", "type": "function", "function": { "name": "list_dir", "arguments": "{\"path\":\".\"}" } }
+      ]
+    },
+    { "role": "tool", "tool_call_id": "call_9", "content": "src\nlib" },
+    { "role": "user", "content": [{ "type": "text", "text": "继续" }] }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "list_dir",
+        "description": "列出目录内容",
+        "parameters": { "type": "object", "properties": { "path": { "type": "string" } } }
+      }
+    }
+  ],
+  "tool_choice": "auto",
+  "reasoning_effort": "high",
+  "max_tokens": 512
+}
