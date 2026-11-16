@@ -8,14 +8,19 @@
  */
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
+import { homedir } from 'node:os'
+import { createInterface } from 'node:readline'
 import { defaultDesktopAuthDirs, WorkBuddyCredentialStore } from './auth.ts'
 import { WorkBuddyCatalog } from './catalog.ts'
 import { createWorkBuddyShim } from './shim.ts'
 import { WorkBuddyUpstreamClient, type WorkBuddyRegion } from './upstream.ts'
+import { BridgeConfigFile, BridgeSettings } from './bridge-config.ts'
 
 const regions: readonly WorkBuddyRegion[] = ['cn', 'global']
 const appSupport = process.env['WORKBUDDY_GATEWAY_HOME']
-  ?? join(process.env['HOME'] ?? '', 'Library', 'Application Support', 'WorkBuddy Model Bridge')
+  ?? (process.platform === 'win32'
+    ? join(process.env['LOCALAPPDATA'] ?? join(homedir(), 'AppData', 'Local'), 'WorkBuddy Model Bridge')
+    : join(homedir(), 'Library', 'Application Support', 'WorkBuddy Model Bridge'))
 const apiKey = process.env['WORKBUDDY_GATEWAY_API_KEY']?.trim() ?? ''
 
 if (apiKey.length < 32) {
@@ -25,7 +30,28 @@ if (apiKey.length < 32) {
 await mkdir(appSupport, { recursive: true, mode: 0o700 })
 
 const client = new WorkBuddyUpstreamClient(message => console.error(`[gateway] ${message}`))
+// Per-client access modes + model mappings (需求 §6.3/§8). Re-read on every
+// request by the protocol entries, so edits from the app UI land without a
+// restart; a corrupt file falls back to defaults and is reported on
+// /bridge/status instead of taking the gateway down.
+const bridgeSettings = new BridgeSettings(new BridgeConfigFile(join(appSupport, 'bridge-config.json')))
 const running: Array<Awaited<ReturnType<typeof createWorkBuddyShim>>> = []
+let stopping = false
+const stop = async (): Promise<void> => {
+  if (stopping) return
+  stopping = true
+  await Promise.all(running.map(shim => shim.close()))
+  process.exit(0)
+}
+process.once('SIGINT', () => void stop())
+process.once('SIGTERM', () => void stop())
+// Windows has no POSIX SIGTERM. The desktop shell owns this private stdin pipe;
+// closing the shell also closes the pipe and prevents an orphan gateway.
+if (process.env['WORKBUDDY_GATEWAY_MANAGED'] === '1') {
+  const commands = createInterface({ input: process.stdin })
+  commands.on('line', line => { if (line === 'stop') void stop() })
+  commands.once('close', () => void stop())
+}
 const endpointRows: Array<{
   region: WorkBuddyRegion
   baseUrl: string
@@ -66,6 +92,8 @@ for (const region of regions) {
     sharedSecret: apiKey,
     allowMissingOrigin: true,
     port: region === 'cn' ? 15971 : 15972,
+    region,
+    bridge: { settings: bridgeSettings },
     logger: {
       warn: (...values) => console.error('[gateway:warn]', ...values),
       error: (...values) => console.error('[gateway:error]', ...values),
@@ -91,13 +119,3 @@ for (const region of regions) {
 // The app consumes this single line from the child process pipe; credentials
 // and local endpoint details are never written to a log or a status file.
 process.stdout.write(`${JSON.stringify({ kind: 'ready', endpoints: endpointRows })}\n`)
-
-let stopping = false
-const stop = async (): Promise<void> => {
-  if (stopping) return
-  stopping = true
-  await Promise.all(running.map(shim => shim.close()))
-  process.exit(0)
-}
-process.once('SIGINT', () => void stop())
-process.once('SIGTERM', () => void stop())
