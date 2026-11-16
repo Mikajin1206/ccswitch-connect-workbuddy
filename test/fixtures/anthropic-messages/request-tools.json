@@ -1,0 +1,39 @@
+{
+  "model": "claude-sonnet-4-5-20250929",
+  "max_tokens": 1024,
+  "stream": false,
+  "system": [
+    { "type": "text", "text": "你是工作台助手。" }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        { "type": "text", "text": "查一下天气" },
+        { "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": "aWNvbg==" } }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        { "type": "text", "text": "我来查询。" },
+        { "type": "tool_use", "id": "toolu_01", "name": "get_weather", "input": { "city": "测试市" } }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        { "type": "tool_result", "tool_use_id": "toolu_01", "content": "晴，25 度" },
+        { "type": "text", "text": "谢谢" }
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "name": "get_weather",
+      "description": "查询城市天气",
+      "input_schema": { "type": "object", "properties": { "city": { "type": "string" } }, "required": ["city"] }
+    }
+  ],
+  "tool_choice": { "type": "auto" }
+}

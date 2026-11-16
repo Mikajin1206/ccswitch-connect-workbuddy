@@ -14,6 +14,7 @@ import { defaultDesktopAuthDirs, WorkBuddyCredentialStore } from './auth.ts'
 import { WorkBuddyCatalog } from './catalog.ts'
 import { createWorkBuddyShim } from './shim.ts'
 import { WorkBuddyUpstreamClient, type WorkBuddyRegion } from './upstream.ts'
+import { BridgeConfigFile, BridgeSettings } from './bridge-config.ts'
 
 const regions: readonly WorkBuddyRegion[] = ['cn', 'global']
 const appSupport = process.env['WORKBUDDY_GATEWAY_HOME']
@@ -29,6 +30,11 @@ if (apiKey.length < 32) {
 await mkdir(appSupport, { recursive: true, mode: 0o700 })
 
 const client = new WorkBuddyUpstreamClient(message => console.error(`[gateway] ${message}`))
+// Per-client access modes + model mappings (需求 §6.3/§8). Re-read on every
+// request by the protocol entries, so edits from the app UI land without a
+// restart; a corrupt file falls back to defaults and is reported on
+// /bridge/status instead of taking the gateway down.
+const bridgeSettings = new BridgeSettings(new BridgeConfigFile(join(appSupport, 'bridge-config.json')))
 const running: Array<Awaited<ReturnType<typeof createWorkBuddyShim>>> = []
 let stopping = false
 const stop = async (): Promise<void> => {
@@ -86,6 +92,8 @@ for (const region of regions) {
     sharedSecret: apiKey,
     allowMissingOrigin: true,
     port: region === 'cn' ? 15971 : 15972,
+    region,
+    bridge: { settings: bridgeSettings },
     logger: {
       warn: (...values) => console.error('[gateway:warn]', ...values),
       error: (...values) => console.error('[gateway:error]', ...values),

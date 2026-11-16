@@ -1,6 +1,6 @@
 # WorkBuddy Model Bridge（macOS / Windows）
 
-一个原生 SwiftUI macOS 应用，通过 CC Switch 把本机已登录的 WorkBuddy 订阅模型接入 Claude Code 与 Claude Desktop。English: [README.en.md](README.en.md).
+一个原生 SwiftUI macOS 应用，把本机已登录的 WorkBuddy 订阅模型接入 Claude Code、Claude Desktop 与 Codex——既可以通过 CC Switch 接入，也可以由应用直连代理。English: [README.en.md](README.en.md).
 
 ## 原作者与移植说明
 
@@ -64,13 +64,80 @@ npm run build
 
 网关只监听回环地址 `127.0.0.1`：国内版端口为 `15971`，国际版端口为 `15972`。每个请求都要通过随机 API key 验证，该 key 保存在 macOS 钥匙串或 Windows DPAPI 加密文件中。WorkBuddy 账户 token 留在应用数据目录，不会传给 Claude 或 CC Switch。
 
+## 客户端接入：CC Switch 与应用直连
+
+每个客户端（Claude Code / Claude Desktop / Codex）都可以独立选择接入方式，互不影响，升级后默认仍是 CC Switch：
+
+- **通过 CC Switch**：既有链路不变——客户端 → CC Switch → 网关的 OpenAI Chat Completions 入口 → WorkBuddy。CC Switch 继续负责协议转换与供应商管理。
+- **由应用直接代理**：客户端直连网关的对应协议入口，数据路径不经过 CC Switch。网关侧入口：
+
+  | 客户端 | 入口 | 说明 |
+  |---|---|---|
+  | Claude Code / Claude Desktop | `POST /v1/messages` | Anthropic Messages 兼容：文本、流式（SSE）、工具调用、错误映射、客户端断连取消 |
+  | Codex | `POST /v1/responses` | OpenAI Responses 兼容：文本、流式、函数调用；`reasoning.effort` 只在模型目录确认支持时转发 |
+  | 诊断 | `GET /bridge/status` | 协议状态、接入方式、模型映射清点与失效映射列表（需 API key） |
+
+  两个协议入口与 Chat Completions 共享同一上游管道（凭据刷新、账号池故障转移、工具调用恢复、日志脱敏都不复制、不重复执行）。
+
+Claude Code 直连示例（环境变量方式，key 由应用提供）：
+
+```sh
+export ANTHROPIC_BASE_URL=http://127.0.0.1:15972
+export ANTHROPIC_AUTH_TOKEN=<应用里的本地 API key>
+export ANTHROPIC_MODEL=claude-sonnet-4-5-20250929
+```
+
+Codex 直连示例（`~/.codex/config.toml`）：
+
+```toml
+[model_providers.workbuddy]
+name = "WorkBuddy Model Bridge"
+base_url = "http://127.0.0.1:15972/v1"
+wire_api = "responses"
+env_key = "WORKBUDDY_BRIDGE_API_KEY"
+```
+
+### 模型映射
+
+客户端发送的模型键（别名、官方 id 或角色）由网关解析成真实的 WorkBuddy 模型 id，显示名永远不会被当成上游 id。映射持久化在应用数据目录的 `bridge-config.json`（含每客户端接入方式），结构如下：
+
+```json
+{
+  "schemaVersion": 1,
+  "accessModes": [
+    { "client": "claude-code", "region": "cn", "mode": "ccswitch" }
+  ],
+  "modelMappings": [
+    {
+      "client": "claude-code",
+      "region": "cn",
+      "modelKey": "claude-sonnet-4-5-20250929",
+      "displayName": "工作台对话",
+      "modelId": "wb-chat-cn",
+      "enabled": true
+    }
+  ]
+}
+```
+
+解析顺序：精确映射 → 目录直通（请求键就是真实 id）→ Claude 角色（`claude-sonnet-*` → `sonnet`）→ 客户端默认映射（`modelKey` 为空）→ 区域唯一模型。解析失败时报可读错误并列出可用模型，绝不静默改道；映射目标失效时保留配置并提示重新绑定。应用 UI 修改此文件后立即生效，无需重启网关；文件损坏时网关按默认值运行并在 `/bridge/status` 报出修复方式，绝不会覆盖坏文件。
+
+### 隐私与安全边界（直连模式）
+
+- 协议入口与 Chat Completions 同样只绑定 `127.0.0.1`，共用同一把本地 key 与同一套回环校验（Host/Origin/Bearer）。
+- 响应头 `x-workbuddy-resolved-model` 说明本次请求实际使用的上游模型 id；诊断不含任何 token、prompt 或响应正文。
+- 切换接入方式只影响网关展示与后续配置流程，不会写入 CC Switch、Claude 或 Codex 的配置文件；恢复 CC Switch 模式不需要删除任何映射。
+
+协议支持边界与已验证/未验证范围见 [docs/SUPPORT-MATRIX.md](docs/SUPPORT-MATRIX.md)。
+
 ## 当前范围
 
 - 应用独立于 DeepSeek Harness，不调用 WorkBuddy CLI。
 - 应用发现 WorkBuddy 桌面凭据、刷新 token、读取模型目录，并按区域启动受保护的本地端点。
-- 首个 macOS 版本暂不包含账户选择、账号池故障转移、积分、签到、图像/视频工具和模型目录编辑。
+- 直连协议入口（`/v1/messages`、`/v1/responses`）已实现并通过 fixture/集成测试；对真实 Claude Code、Claude Desktop、Codex 的端到端验收仍在进行中（见支持矩阵）。
+- Claude Desktop 的直连 profile 管理、安装器化 Windows EXE 与 macOS `.dmg` 交付按开发方案分阶段推进；当前仓库包含共享网关与协议层，不包含上述平台成品。
 - Claude harness 执行工具与本地任务；WorkBuddy 订阅仅提供模型推理。
-- Claude Desktop 的第三方模型映射和 Claude Code 网关配置取决于已安装的 CC Switch 与 Claude 版本。Anthropic 不支持将 Claude Code 路由到非 Claude 模型。
+- Anthropic 扩展思考（`thinking`）暂不支持透传，请求会得到明确错误；上游推理档位经 Responses 入口按目录能力转发。
 
 ## 第三方声明
 

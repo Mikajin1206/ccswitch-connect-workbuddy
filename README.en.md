@@ -1,6 +1,6 @@
 # WorkBuddy Model Bridge for macOS and Windows
 
-A standalone native SwiftUI macOS app that connects locally signed-in WorkBuddy subscription models to Claude Code and Claude Desktop through CC Switch.
+A standalone native SwiftUI macOS app that connects locally signed-in WorkBuddy subscription models to Claude Code, Claude Desktop and Codex — through CC Switch, or proxied directly by the app.中文文档：[README.md](README.md)。
 
 ## Attribution and porting logic
 
@@ -33,13 +33,80 @@ The build also creates `macos/build/WorkBuddy Model Bridge.zip`, preserving the 
 
 The gateway listens on loopback ports `15971` (domestic) and `15972` (international). It binds only to `127.0.0.1`; each request requires a random API key stored in the macOS Keychain. WorkBuddy account tokens stay in the app's Application Support directory and are never passed to Claude or CC Switch.
 
+## Client access: CC Switch or direct connection
+
+Each client (Claude Code / Claude Desktop / Codex) can choose its access mode independently; upgrades default back to CC Switch and nothing is ever written into a client's config silently:
+
+- **Through CC Switch** — unchanged: client → CC Switch → the gateway's OpenAI Chat Completions entry → WorkBuddy.
+- **Proxied directly by the app** — the client talks to a protocol entry the gateway serves itself; the data path never touches CC Switch:
+
+  | Client | Entry | Notes |
+  |---|---|---|
+  | Claude Code / Claude Desktop | `POST /v1/messages` | Anthropic Messages compatible: text, streaming (SSE), tool calls, error mapping, client-disconnect cancel |
+  | Codex | `POST /v1/responses` | OpenAI Responses compatible: text, streaming, function calls; `reasoning.effort` is forwarded only when the catalog confirms support |
+  | Diagnostics | `GET /bridge/status` | Protocol state, access modes, model-mapping inventory and stale mappings (requires the API key) |
+
+  Both entries reuse the same upstream pipeline as Chat Completions — credential refresh, account-pool failover, tool-call recovery and log hygiene run once, in the pipeline that already owns them.
+
+Claude Code direct example (environment variables; the key comes from the app):
+
+```sh
+export ANTHROPIC_BASE_URL=http://127.0.0.1:15972
+export ANTHROPIC_AUTH_TOKEN=<local API key from the app>
+export ANTHROPIC_MODEL=claude-sonnet-4-5-20250929
+```
+
+Codex direct example (`~/.codex/config.toml`):
+
+```toml
+[model_providers.workbuddy]
+name = "WorkBuddy Model Bridge"
+base_url = "http://127.0.0.1:15972/v1"
+wire_api = "responses"
+env_key = "WORKBUDDY_BRIDGE_API_KEY"
+```
+
+### Model mapping
+
+The model key a client sends (an alias, an official id, or a role) is resolved to a REAL WorkBuddy model id; display names are never mistaken for upstream ids. Mappings and per-client access modes persist in `bridge-config.json` inside the app data directory:
+
+```json
+{
+  "schemaVersion": 1,
+  "accessModes": [
+    { "client": "claude-code", "region": "cn", "mode": "ccswitch" }
+  ],
+  "modelMappings": [
+    {
+      "client": "claude-code",
+      "region": "cn",
+      "modelKey": "claude-sonnet-4-5-20250929",
+      "displayName": "WorkBuddy Chat",
+      "modelId": "wb-chat-cn",
+      "enabled": true
+    }
+  ]
+}
+```
+
+Resolution order: exact mapping → catalog pass-through (the key IS a real id) → Claude role (`claude-sonnet-*` → `sonnet`) → the client's default mapping (`modelKey` empty) → the region's only model. Failures are readable errors listing servable models, never silent reroutes; a mapping whose target left the catalog is kept and flagged for rebinding. Edits made by the app UI take effect without restarting the gateway; a corrupt file makes the gateway run on defaults and report the recovery path on `/bridge/status`, never overwriting the broken file.
+
+### Privacy and security (direct mode)
+
+- The protocol entries bind `127.0.0.1` only and share the same local key and loopback guards (Host/Origin/Bearer) as Chat Completions.
+- The `x-workbuddy-resolved-model` response header says which upstream id served the request; diagnostics never contain tokens, prompts or response bodies.
+- Switching access modes only changes what the gateway displays and how it guides setup — it never writes CC Switch, Claude or Codex config files, and switching back needs no cleanup.
+
+See [docs/SUPPORT-MATRIX.md](docs/SUPPORT-MATRIX.md) for protocol boundaries and the verified / not-yet-verified scope.
+
 ## Current scope
 
 - The app runs independently of DeepSeek Harness and does not invoke WorkBuddy CLI.
 - The app discovers WorkBuddy's local desktop credentials, refreshes tokens through the existing store, reads model catalogs, and starts one secured endpoint per region.
-- Account selection, account-pool failover, credits, check-in, image/video tools, and catalog editing are not in this first macOS app slice.
+- The direct-connection entries (`/v1/messages`, `/v1/responses`) are implemented and covered by fixture/integration tests; end-to-end acceptance against real Claude Code, Claude Desktop and Codex is still pending (see the support matrix).
+- Claude Desktop direct-profile management, an installer-grade Windows EXE, and macOS `.dmg` delivery proceed in phases per the development plan; this repository currently carries the shared gateway and protocol layers, not those platform artifacts.
 - Claude's harness owns tool execution and local task work; WorkBuddy supplies model inference through its subscription.
-- Claude Desktop's third-party model mapping and Claude Code gateway configuration depend on the installed CC Switch and Claude versions. Anthropic does not support routing Claude Code to non-Claude models.
+- Anthropic extended thinking (`thinking`) is not forwarded; such requests get an explicit error. Upstream reasoning tiers are forwarded through the Responses entry according to catalog capability.
 ## Windows app
 
 On Windows 10/11 with .NET Framework 4.8 and Node.js ^22.19.0 or >=24, run `npm install`, `npm run typecheck`, then `./windows/build-app.ps1` from PowerShell. See [the Windows build instructions](README.md#构建-windows-应用). Follow your organization's script approval process if execution policy blocks scripts; the build does not change system policy.
